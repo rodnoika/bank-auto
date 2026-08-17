@@ -7,7 +7,6 @@ if (process.env.VERCEL && !process.env.BACKEND_URL) {
 const backendUrl = (process.env.BACKEND_URL ?? "http://localhost:8000").replace(/\/$/, "");
 
 const nextConfig: NextConfig = {
-  output: "standalone",
   async rewrites() {
     return [
       { source: "/api/:path*", destination: `${backendUrl}/api/:path*` },
