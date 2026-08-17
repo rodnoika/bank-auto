@@ -1,0 +1,24 @@
+services:
+  bankhub:
+    build: .
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    environment:
+      DATABASE_PATH: /data/bankhub.sqlite3
+    volumes:
+      - bankhub_data:/data
+    restart: unless-stopped
+
+  web:
+    build:
+      context: ./web
+    ports:
+      - "3000:3000"
+    depends_on:
+      - bankhub
+    restart: unless-stopped
+
+volumes:
+  bankhub_data:

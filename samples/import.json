@@ -1,0 +1,20 @@
+{
+  "transactions": [
+    {
+      "bank": "KASPI",
+      "account": "KZ000000000000000000",
+      "external_id": "demo-1",
+      "operation_date": "2026-08-10",
+      "amount": 1250000,
+      "direction": "incoming",
+      "currency": "KZT",
+      "counterparty_name": "ТОО Альфа",
+      "counterparty_bin": "123456789012",
+      "counterparty_iban": "KZ111111111111111111",
+      "document_number": "458",
+      "knp": "710",
+      "kbe": "17",
+      "payment_purpose": "Оплата по счету №458 от 05.08.2026 за товар"
+    }
+  ]
+}

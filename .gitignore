@@ -1,0 +1,10 @@
+.env
+__pycache__/
+*.py[cod]
+*.sqlite3
+.venv/
+node_modules/
+.next/
+.vercel/
+data/
+.local-*.log
