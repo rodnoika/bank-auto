@@ -20,6 +20,7 @@ CREATE TABLE IF NOT EXISTS transactions (
  counterparty_name TEXT,
  counterparty_bin TEXT,
  counterparty_iban TEXT,
+ counterparty_bik TEXT,
  document_number TEXT,
  knp TEXT,
  kbe TEXT,
@@ -54,6 +55,7 @@ POSTGRES_SCHEMA = (
      counterparty_name TEXT,
      counterparty_bin TEXT,
      counterparty_iban TEXT,
+     counterparty_bik TEXT,
      document_number TEXT,
      knp TEXT,
      kbe TEXT,
@@ -77,7 +79,7 @@ POSTGRES_SCHEMA = (
 
 EDITABLE_FIELDS = {
     "operation_date", "amount", "direction", "currency", "counterparty_name",
-    "counterparty_bin", "counterparty_iban", "document_number", "knp", "kbe",
+    "counterparty_bin", "counterparty_iban", "counterparty_bik", "document_number", "knp", "kbe",
     "payment_purpose", "account",
 }
 
@@ -129,6 +131,7 @@ def init_db():
                 "ai_summary": "TEXT",
                 "ai_category": "TEXT",
                 "ai_processed_at": "TIMESTAMPTZ",
+                "counterparty_bik": "TEXT",
             }.items():
                 c.execute(f"ALTER TABLE transactions ADD COLUMN IF NOT EXISTS {column} {definition}")
         else:
@@ -138,6 +141,7 @@ def init_db():
                 "ai_summary": "ALTER TABLE transactions ADD COLUMN ai_summary TEXT",
                 "ai_category": "ALTER TABLE transactions ADD COLUMN ai_category TEXT",
                 "ai_processed_at": "ALTER TABLE transactions ADD COLUMN ai_processed_at TEXT",
+                "counterparty_bik": "ALTER TABLE transactions ADD COLUMN counterparty_bik TEXT",
             }
             for column, sql in migrations.items():
                 if column not in columns:
@@ -161,7 +165,7 @@ def insert_tx(tx):
     tx["status"] = "review"
     columns = [
         "bank", "account", "external_id", "operation_date", "amount", "direction", "currency",
-        "counterparty_name", "counterparty_bin", "counterparty_iban", "document_number",
+        "counterparty_name", "counterparty_bin", "counterparty_iban", "counterparty_bik", "document_number",
         "knp", "kbe", "payment_purpose", "source_type", "source_name", "raw_text", "raw_json",
         "fingerprint", "status",
     ]

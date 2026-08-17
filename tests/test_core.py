@@ -27,6 +27,7 @@ class CoreFlowTests(unittest.TestCase):
             "direction": "incoming",
             "currency": "KZT",
             "counterparty_bin": "123456789012",
+            "counterparty_bik": "CASPKZKA",
             "payment_purpose": "Оплата по счету 458",
             "source_type": "pdf",
             "source_name": "statement.pdf",
@@ -39,6 +40,7 @@ class CoreFlowTests(unittest.TestCase):
         self.assertFalse(duplicate)
         self.assertEqual("review", self.db.get_tx(tx_id)["status"])
         self.assertEqual([], self.db.list_tx(status="ready"))
+        self.assertEqual("CASPKZKA", self.db.get_tx(tx_id)["counterparty_bik"])
 
         same_id, duplicate = self.db.insert_tx(self.sample())
         self.assertTrue(duplicate)
@@ -66,6 +68,70 @@ class ParserTests(unittest.TestCase):
         self.assertEqual("BCC", detect_bank("Bank CenterCredit"))
         self.assertEqual("FREEDOM", detect_bank("Freedom Bank Kazakhstan"))
         self.assertEqual("UNKNOWN", detect_bank("без названия банка"))
+
+    def test_kaspi_table_columns_are_parsed_without_dates_as_amounts(self):
+        from app.pdf_parser import parse_text
+
+        text = """
+        Наименование и БИК обслуживающего Банка: АО "KASPI BANK" Бик: CASPKZKA
+        Дата последнего движения: 17.08.2026 15:49
+        ИИН/БИН: 860423399027
+        Входящий остаток 623 919,07 KZT
+        Номер документа Дата операции Дебет Кредит Наименование получателя
+        72 17.08.2026
+        15:49:14
+        2 000 000 УГД по Есильскому району
+        БИН/ИИН 081240013779
+        KZ24070105KSN0000000 KKMFKZ2A 911 ИПН с доходов, не облагаемых у источника
+        выплаты за июнь 2026г
+        64431261 17.08.2026
+        15:46:57
+        10 398,96 АО "KASPI BANK" БИН/ИИН
+        971240001315
+        KZ03722S000020267259 841 Оплата за услуги операций по картам Kaspi
+        Gold и другим картам за 17/08/2026
+        64431226 17.08.2026
+        15:45:57
+        12 008,57 ТОО Kaspi Pay БИН/ИИН
+        200840000951
+        KZ86722S000004987101 CASPKZKA 851 Оплата за услуги процессинга Без НДС за
+        17/08/2026
+        64431198 17.08.2026
+        15:45:57
+        2 063 980 АО "KASPI BANK" БИН/ИИН
+        971240001315
+        KZ41722S000020267254 190 Продажи с Kaspi.kz за 17/08/2026
+        Отчет сформирован пользователем 17.08.2026 19:47
+        """
+
+        bank, _, transactions = parse_text(
+            text,
+            "Выписка_по_счету_KZ74722S000020043560.pdf",
+        )
+
+        self.assertEqual("KASPI", bank)
+        self.assertEqual(4, len(transactions))
+        self.assertEqual([2000000, 10398.96, 12008.57, 2063980], [item["amount"] for item in transactions])
+
+        tax = transactions[0]
+        self.assertEqual("72", tax["document_number"])
+        self.assertEqual("KZ74722S000020043560", tax["account"])
+        self.assertEqual("УГД по Есильскому району", tax["counterparty_name"])
+        self.assertEqual("081240013779", tax["counterparty_bin"])
+        self.assertEqual("KZ24070105KSN0000000", tax["counterparty_iban"])
+        self.assertEqual("KKMFKZ2A", tax["counterparty_bik"])
+        self.assertEqual("911", tax["knp"])
+        self.assertEqual("ИПН с доходов, не облагаемых у источника выплаты за июнь 2026г", tax["payment_purpose"])
+        self.assertEqual("outgoing", tax["direction"])
+
+        processing = transactions[2]
+        self.assertEqual("ТОО Kaspi Pay", processing["counterparty_name"])
+        self.assertEqual("CASPKZKA", processing["counterparty_bik"])
+        self.assertEqual("851", processing["knp"])
+
+        sales = transactions[3]
+        self.assertEqual("incoming", sales["direction"])
+        self.assertEqual("Продажи с Kaspi.kz за 17/08/2026", sales["payment_purpose"])
 
 
 class AITextTests(unittest.TestCase):
