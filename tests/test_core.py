@@ -172,6 +172,42 @@ class DatabaseDialectTests(unittest.TestCase):
             fake.call,
         )
 
+    def test_postgres_bulk_delete_uses_one_array_query(self):
+        from contextlib import contextmanager
+        from unittest.mock import patch
+
+        from app import db
+
+        class FakeConnection:
+            rowcount = 3
+
+            def __init__(self):
+                self.calls = []
+
+            def execute(self, sql, params):
+                self.calls.append((sql, params))
+                return self
+
+        fake = FakeConnection()
+
+        @contextmanager
+        def fake_conn():
+            yield fake
+
+        original = db.DATABASE_URL
+        try:
+            db.DATABASE_URL = "postgresql://example.test/bankhub"
+            with patch.object(db, "conn", fake_conn):
+                deleted = db.delete_many([1, 2, 2, 3])
+        finally:
+            db.DATABASE_URL = original
+
+        self.assertEqual(3, deleted)
+        self.assertEqual(
+            [("DELETE FROM transactions WHERE id = ANY(%s::bigint[])", ([1, 2, 3],))],
+            fake.calls,
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

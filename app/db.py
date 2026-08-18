@@ -83,6 +83,10 @@ EDITABLE_FIELDS = {
     "payment_purpose", "account",
 }
 BULK_CHUNK_SIZE = 400
+COMPACT_TX_COLUMNS = (
+    "id", "bank", "operation_date", "amount", "direction", "currency", "counterparty_name",
+    "counterparty_bin", "payment_purpose", "source_name", "status", "ai_summary", "ai_category",
+)
 
 
 def is_postgres():
@@ -202,28 +206,46 @@ def get_tx(tx_id):
         return dict(row) if row else None
 
 
-def list_tx(status=None, limit=500):
+def _list_tx(connection, status=None, limit=500, compact=False):
+    columns = ",".join(COMPACT_TX_COLUMNS) if compact else "*"
+    if status:
+        rows = execute(
+            connection,
+            f"SELECT {columns} FROM transactions WHERE status=? ORDER BY operation_date DESC,id DESC LIMIT ?",
+            (status, limit),
+        ).fetchall()
+    else:
+        rows = execute(
+            connection,
+            f"SELECT {columns} FROM transactions ORDER BY operation_date DESC,id DESC LIMIT ?",
+            (limit,),
+        ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def list_tx(status=None, limit=500, compact=False):
     with conn() as c:
-        if status:
-            rows = execute(
-                c,
-                "SELECT * FROM transactions WHERE status=? ORDER BY operation_date DESC,id DESC LIMIT ?",
-                (status, limit),
-            ).fetchall()
-        else:
-            rows = execute(
-                c,
-                "SELECT * FROM transactions ORDER BY operation_date DESC,id DESC LIMIT ?", (limit,)
-            ).fetchall()
-        return [dict(row) for row in rows]
+        return _list_tx(c, status=status, limit=limit, compact=compact)
+
+
+def _status_counts(connection):
+    rows = execute(connection, "SELECT status, COUNT(*) AS total FROM transactions GROUP BY status").fetchall()
+    result = {"review": 0, "ready": 0, "exported": 0, "ignored": 0}
+    result.update({row["status"]: row["total"] for row in rows})
+    return result
 
 
 def status_counts():
     with conn() as c:
-        rows = execute(c, "SELECT status, COUNT(*) AS total FROM transactions GROUP BY status").fetchall()
-        result = {"review": 0, "ready": 0, "exported": 0, "ignored": 0}
-        result.update({row["status"]: row["total"] for row in rows})
-        return result
+        return _status_counts(c)
+
+
+def list_tx_with_counts(status=None, limit=500, compact=False):
+    with conn() as c:
+        return {
+            "items": _list_tx(c, status=status, limit=limit, compact=compact),
+            "counts": _status_counts(c),
+        }
 
 
 def update_tx(tx_id, changes):
@@ -281,6 +303,14 @@ def delete_many(ids):
     clean_ids = list(dict.fromkeys(int(value) for value in ids))
     if not clean_ids:
         return 0
+    if is_postgres():
+        with conn() as c:
+            cursor = execute(
+                c,
+                "DELETE FROM transactions WHERE id = ANY(?::bigint[])",
+                (clean_ids,),
+            )
+            return cursor.rowcount
     deleted = 0
     with conn() as c:
         for start in range(0, len(clean_ids), BULK_CHUNK_SIZE):

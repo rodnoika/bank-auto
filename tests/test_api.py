@@ -118,6 +118,15 @@ class APIFlowTests(unittest.TestCase):
             ]
             ids.append(matching[0]["id"])
 
+        compact_items = self.client.get(
+            "/api/v1/transactions?compact=true"
+        ).json()["items"]
+        compact_item = next(item for item in compact_items if item["id"] == ids[0])
+        self.assertNotIn("raw_text", compact_item)
+        self.assertNotIn("raw_json", compact_item)
+        self.assertNotIn("fingerprint", compact_item)
+        self.assertIn("payment_purpose", compact_item)
+
         unauthorized = self.client.post("/api/v1/transactions/delete", json={"ids": ids[:2]})
         self.assertEqual(401, unauthorized.status_code)
 

@@ -14,10 +14,10 @@ from .db import (
     init_db,
     insert_tx,
     list_tx,
+    list_tx_with_counts,
     mark_exported,
     save_ai_result,
     set_status,
-    status_counts,
     update_tx,
 )
 from .pdf_parser import parse_pdf
@@ -118,8 +118,12 @@ async def import_json(payload: dict, x_api_key: str | None = Header(default=None
 
 
 @app.get("/api/v1/transactions")
-def transactions(status: str | None = None, limit: int = Query(500, le=5000)):
-    return {"items": list_tx(status=status, limit=limit), "counts": status_counts()}
+def transactions(
+    status: str | None = None,
+    limit: int = Query(500, le=5000),
+    compact: bool = False,
+):
+    return list_tx_with_counts(status=status, limit=limit, compact=compact)
 
 
 @app.patch("/api/v1/transactions/{tx_id}")

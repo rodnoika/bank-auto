@@ -60,11 +60,12 @@ export function Dashboard() {
   const [file, setFile] = useState<File | null>(null);
   const [uploading, setUploading] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [bulkAction, setBulkAction] = useState<"approve" | "delete" | null>(null);
 
   const loadData = useCallback(async () => {
     try {
       const [txData, healthData] = await Promise.all([
-        request<{ items: Transaction[]; counts: Counts }>("/api/v1/transactions?limit=5000"),
+        request<{ items: Transaction[]; counts: Counts }>("/api/v1/transactions?limit=5000&compact=true"),
         request<Health>("/backend-health"),
       ]);
       setTransactions(txData.items);
@@ -121,15 +122,28 @@ export function Dashboard() {
   async function approveSelected() {
     const ids = [...selected].filter((id) => transactions.find((item) => item.id === id)?.status === "review");
     if (!ids.length) return setNotice({ text: "Выберите операции на проверке", error: true });
+    setBulkAction("approve");
     try {
       const result = await request<{ approved: number }>("/api/v1/transactions/approve", apiKey, {
         method: "POST", body: JSON.stringify({ ids }),
       });
       setNotice({ text: `Подтверждено: ${result.approved}` });
       setSelected(new Set());
-      await loadData();
+      if (result.approved === ids.length) {
+        const idSet = new Set(ids);
+        setTransactions((current) => current.map((item) => idSet.has(item.id) ? { ...item, status: "ready" } : item));
+        setCounts((current) => ({
+          ...current,
+          review: Math.max(0, current.review - result.approved),
+          ready: current.ready + result.approved,
+        }));
+      } else {
+        await loadData();
+      }
     } catch (error) {
       setNotice({ text: error instanceof Error ? error.message : "Ошибка подтверждения", error: true });
+    } finally {
+      setBulkAction(null);
     }
   }
 
@@ -138,15 +152,35 @@ export function Dashboard() {
     if (!ids.length) return setNotice({ text: "Выберите операции для удаления", error: true });
     const confirmed = window.confirm(`Удалить выбранные операции (${ids.length}) без возможности восстановления?`);
     if (!confirmed) return;
+    const idSet = new Set(ids);
+    const deletingItems = transactions.filter((item) => idSet.has(item.id));
+    setBulkAction("delete");
+    setNotice({ text: `Удаляем операций: ${ids.length}…` });
     try {
       const result = await request<{ deleted: number }>("/api/v1/transactions/delete", apiKey, {
         method: "POST", body: JSON.stringify({ ids }),
       });
       setNotice({ text: `Удалено операций: ${result.deleted}` });
       setSelected(new Set());
-      await loadData();
+      if (result.deleted === deletingItems.length) {
+        const removedByStatus = deletingItems.reduce<Counts>((totals, item) => {
+          totals[item.status] += 1;
+          return totals;
+        }, { ...emptyCounts });
+        setTransactions((current) => current.filter((item) => !idSet.has(item.id)));
+        setCounts((current) => ({
+          review: Math.max(0, current.review - removedByStatus.review),
+          ready: Math.max(0, current.ready - removedByStatus.ready),
+          exported: Math.max(0, current.exported - removedByStatus.exported),
+          ignored: Math.max(0, current.ignored - removedByStatus.ignored),
+        }));
+      } else {
+        await loadData();
+      }
     } catch (error) {
       setNotice({ text: error instanceof Error ? error.message : "Ошибка удаления", error: true });
+    } finally {
+      setBulkAction(null);
     }
   }
 
@@ -228,10 +262,10 @@ export function Dashboard() {
           </div>
         </div>
         <div className="bulkbar">
-          <label><input type="checkbox" checked={allVisibleSelected} onChange={(event) => toggleVisible(event.target.checked)} /> Выбрать видимые {selected.size > 0 && `· выбрано ${selected.size}`}</label>
+          <label><input type="checkbox" disabled={bulkAction !== null} checked={allVisibleSelected} onChange={(event) => toggleVisible(event.target.checked)} /> Выбрать видимые {selected.size > 0 && `· выбрано ${selected.size}`}</label>
           <div className="bulk-actions">
-            <button className="button danger" disabled={selected.size === 0} onClick={() => void deleteSelected()}><Icon name="trash" />Удалить выбранные</button>
-            <button className="button primary" disabled={selectedReviewCount === 0} onClick={() => void approveSelected()}><Icon name="check" />Подтвердить выбранные</button>
+            <button className="button danger" disabled={selected.size === 0 || bulkAction !== null} onClick={() => void deleteSelected()}><Icon name="trash" />{bulkAction === "delete" ? "Удаляем…" : "Удалить выбранные"}</button>
+            <button className="button primary" disabled={selectedReviewCount === 0 || bulkAction !== null} onClick={() => void approveSelected()}><Icon name="check" />{bulkAction === "approve" ? "Подтверждаем…" : "Подтвердить выбранные"}</button>
           </div>
         </div>
 
