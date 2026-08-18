@@ -9,6 +9,7 @@ from .ai_text import analyze_transaction, enabled as ai_enabled, model_name
 from .db import (
     approve_many,
     database_kind,
+    delete_many,
     get_tx,
     init_db,
     insert_tx,
@@ -144,9 +145,22 @@ def edit_transaction(tx_id: int, payload: dict, x_api_key: str | None = Header(d
 def approve_transactions(payload: dict, x_api_key: str | None = Header(default=None)):
     auth(x_api_key)
     ids = payload.get("ids", [])
-    if not isinstance(ids, list) or len(ids) > 500:
-        raise HTTPException(400, "ids должен быть массивом до 500 элементов")
+    if not isinstance(ids, list):
+        raise HTTPException(400, "ids должен быть массивом")
+    if any(isinstance(value, bool) or not isinstance(value, int) or value <= 0 for value in ids):
+        raise HTTPException(400, "ids должен содержать только положительные номера операций")
     return {"approved": approve_many(ids)}
+
+
+@app.post("/api/v1/transactions/delete")
+def delete_transactions(payload: dict, x_api_key: str | None = Header(default=None)):
+    auth(x_api_key)
+    ids = payload.get("ids", [])
+    if not isinstance(ids, list):
+        raise HTTPException(400, "ids должен быть массивом")
+    if any(isinstance(value, bool) or not isinstance(value, int) or value <= 0 for value in ids):
+        raise HTTPException(400, "ids должен содержать только положительные номера операций")
+    return {"deleted": delete_many(ids)}
 
 
 @app.post("/api/v1/transactions/{tx_id}/approve")

@@ -89,6 +89,80 @@ class APIFlowTests(unittest.TestCase):
         marked = self.client.post(f"/api/v1/transactions/{tx_id}/mark-exported", headers=headers)
         self.assertEqual(200, marked.status_code)
 
+    def test_bulk_delete_requires_key_and_removes_only_selected_transactions(self):
+        headers = {"X-API-Key": "test-key"}
+        payloads = [
+            {
+                "bank": "KASPI",
+                "operation_date": "2026-08-12",
+                "amount": amount,
+                "direction": "outgoing",
+                "currency": "KZT",
+                "payment_purpose": f"Удаление {amount}",
+                "source_type": "json",
+                "source_name": "delete-test",
+            }
+            for amount in (101, 202, 303)
+        ]
+        ids = []
+        for transaction in payloads:
+            response = self.client.post(
+                "/api/v1/transactions/import-json",
+                json={"transactions": [transaction]},
+                headers=headers,
+            )
+            self.assertEqual(1, response.json()["created"])
+            matching = [
+                item for item in self.client.get("/api/v1/transactions").json()["items"]
+                if item.get("source_name") == "delete-test" and item["amount"] == transaction["amount"]
+            ]
+            ids.append(matching[0]["id"])
+
+        unauthorized = self.client.post("/api/v1/transactions/delete", json={"ids": ids[:2]})
+        self.assertEqual(401, unauthorized.status_code)
+
+        deleted = self.client.post(
+            "/api/v1/transactions/delete",
+            json={"ids": [ids[0], ids[1], ids[1]]},
+            headers=headers,
+        )
+        self.assertEqual({"deleted": 2}, deleted.json())
+        remaining_ids = {
+            item["id"] for item in self.client.get("/api/v1/transactions").json()["items"]
+        }
+        self.assertNotIn(ids[0], remaining_ids)
+        self.assertNotIn(ids[1], remaining_ids)
+        self.assertIn(ids[2], remaining_ids)
+
+        invalid = self.client.post(
+            "/api/v1/transactions/delete",
+            json={"ids": ["1", True, -1]},
+            headers=headers,
+        )
+        self.assertEqual(400, invalid.status_code)
+        self.client.post(
+            "/api/v1/transactions/delete",
+            json={"ids": [ids[2]]},
+            headers=headers,
+        )
+
+        many_ids = list(range(100000, 101201))
+        unlimited_delete = self.client.post(
+            "/api/v1/transactions/delete",
+            json={"ids": many_ids},
+            headers=headers,
+        )
+        self.assertEqual(200, unlimited_delete.status_code)
+        self.assertEqual({"deleted": 0}, unlimited_delete.json())
+
+        unlimited_approve = self.client.post(
+            "/api/v1/transactions/approve",
+            json={"ids": many_ids},
+            headers=headers,
+        )
+        self.assertEqual(200, unlimited_approve.status_code)
+        self.assertEqual({"approved": 0}, unlimited_approve.json())
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -75,6 +75,7 @@ npm run dev
 
 - `GET /api/v1/transactions/export?status=ready` — получить подтверждённые операции.
 - `POST /api/v1/transactions/{id}/mark-exported` — подтвердить успешное создание документа в 1С.
+- `POST /api/v1/transactions/delete` — удалить выбранные операции по массиву `ids` без общего лимита на количество.
 
 Оба запроса требуют заголовок `X-API-Key`.
 

@@ -37,13 +37,14 @@ async function request<T>(url: string, apiKey = "", init: RequestInit = {}): Pro
   return body as T;
 }
 
-function Icon({ name }: { name: "upload" | "check" | "spark" | "skip" | "save" }) {
+function Icon({ name }: { name: "upload" | "check" | "spark" | "skip" | "save" | "trash" }) {
   const paths = {
     upload: <><path d="M12 3v12"/><path d="m7 8 5-5 5 5"/><path d="M5 21h14"/></>,
     check: <path d="m5 12 4 4L19 6"/>,
     spark: <><path d="m12 3 1.4 4.1L17.5 9l-4.1 1.4L12 14.5l-1.4-4.1L6.5 9l4.1-1.9L12 3Z"/><path d="m19 15 .7 2.3L22 18l-2.3.7L19 21l-.7-2.3L16 18l2.3-.7L19 15Z"/></>,
     skip: <><path d="m6 6 12 12"/><path d="M18 6 6 18"/></>,
     save: <><path d="M5 3h12l2 2v16H5Z"/><path d="M8 3v6h8V3"/><path d="M8 21v-7h8v7"/></>,
+    trash: <><path d="M4 7h16"/><path d="m9 7 1-3h4l1 3"/><path d="m6 7 1 14h10l1-14"/><path d="M10 11v6"/><path d="M14 11v6"/></>,
   };
   return <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">{paths[name]}</svg>;
 }
@@ -63,7 +64,7 @@ export function Dashboard() {
   const loadData = useCallback(async () => {
     try {
       const [txData, healthData] = await Promise.all([
-        request<{ items: Transaction[]; counts: Counts }>("/api/v1/transactions?limit=300"),
+        request<{ items: Transaction[]; counts: Counts }>("/api/v1/transactions?limit=5000"),
         request<Health>("/backend-health"),
       ]);
       setTransactions(txData.items);
@@ -132,6 +133,23 @@ export function Dashboard() {
     }
   }
 
+  async function deleteSelected() {
+    const ids = [...selected].filter((id) => transactions.some((item) => item.id === id));
+    if (!ids.length) return setNotice({ text: "Выберите операции для удаления", error: true });
+    const confirmed = window.confirm(`Удалить выбранные операции (${ids.length}) без возможности восстановления?`);
+    if (!confirmed) return;
+    try {
+      const result = await request<{ deleted: number }>("/api/v1/transactions/delete", apiKey, {
+        method: "POST", body: JSON.stringify({ ids }),
+      });
+      setNotice({ text: `Удалено операций: ${result.deleted}` });
+      setSelected(new Set());
+      await loadData();
+    } catch (error) {
+      setNotice({ text: error instanceof Error ? error.message : "Ошибка удаления", error: true });
+    }
+  }
+
   function toggleSelected(id: number, checked: boolean) {
     setSelected((current) => {
       const next = new Set(current);
@@ -140,7 +158,18 @@ export function Dashboard() {
     });
   }
 
-  const reviewVisible = visible.filter((item) => item.status === "review");
+  function toggleVisible(checked: boolean) {
+    setSelected((current) => {
+      const next = new Set(current);
+      for (const item of visible) {
+        if (checked) next.add(item.id); else next.delete(item.id);
+      }
+      return next;
+    });
+  }
+
+  const selectedReviewCount = [...selected].filter((id) => transactions.find((item) => item.id === id)?.status === "review").length;
+  const allVisibleSelected = visible.length > 0 && visible.every((item) => selected.has(item.id));
 
   return (
     <main className="shell">
@@ -199,8 +228,11 @@ export function Dashboard() {
           </div>
         </div>
         <div className="bulkbar">
-          <label><input type="checkbox" checked={reviewVisible.length > 0 && reviewVisible.every((item) => selected.has(item.id))} onChange={(event) => setSelected(event.target.checked ? new Set(reviewVisible.map((item) => item.id)) : new Set())} /> Выбрать видимые</label>
-          <button className="button primary" onClick={() => void approveSelected()}><Icon name="check" />Подтвердить выбранные</button>
+          <label><input type="checkbox" checked={allVisibleSelected} onChange={(event) => toggleVisible(event.target.checked)} /> Выбрать видимые {selected.size > 0 && `· выбрано ${selected.size}`}</label>
+          <div className="bulk-actions">
+            <button className="button danger" disabled={selected.size === 0} onClick={() => void deleteSelected()}><Icon name="trash" />Удалить выбранные</button>
+            <button className="button primary" disabled={selectedReviewCount === 0} onClick={() => void approveSelected()}><Icon name="check" />Подтвердить выбранные</button>
+          </div>
         </div>
 
         <div className="table-wrap">
@@ -270,7 +302,7 @@ function TransactionRow({ item, apiKey, aiEnabled, selected, onSelect, onRefresh
 
   return (
     <tr className={busy ? "busy" : ""}>
-      <td><input type="checkbox" disabled={!editable} checked={selected} onChange={(event) => onSelect(item.id, event.target.checked)} /></td>
+      <td><input type="checkbox" checked={selected} onChange={(event) => onSelect(item.id, event.target.checked)} /></td>
       <td><StatusPill status={item.status} /></td>
       <td><input className="cell-input date" disabled={!editable} value={draft.operation_date} onChange={(event) => update("operation_date", event.target.value)} /></td>
       <td><b>{item.bank}</b><small className="source">{item.source_name}</small></td>

@@ -82,6 +82,7 @@ EDITABLE_FIELDS = {
     "counterparty_bin", "counterparty_iban", "counterparty_bik", "document_number", "knp", "kbe",
     "payment_purpose", "account",
 }
+BULK_CHUNK_SIZE = 400
 
 
 def is_postgres():
@@ -262,14 +263,36 @@ def approve_many(ids):
     clean_ids = list(dict.fromkeys(int(value) for value in ids))
     if not clean_ids:
         return 0
-    placeholders = ",".join("?" for _ in clean_ids)
+    approved = 0
     with conn() as c:
-        cursor = execute(
-            c,
-            f"UPDATE transactions SET status='ready' WHERE status='review' AND id IN ({placeholders})",
-            clean_ids,
-        )
-        return cursor.rowcount
+        for start in range(0, len(clean_ids), BULK_CHUNK_SIZE):
+            chunk = clean_ids[start:start + BULK_CHUNK_SIZE]
+            placeholders = ",".join("?" for _ in chunk)
+            cursor = execute(
+                c,
+                f"UPDATE transactions SET status='ready' WHERE status='review' AND id IN ({placeholders})",
+                chunk,
+            )
+            approved += cursor.rowcount
+    return approved
+
+
+def delete_many(ids):
+    clean_ids = list(dict.fromkeys(int(value) for value in ids))
+    if not clean_ids:
+        return 0
+    deleted = 0
+    with conn() as c:
+        for start in range(0, len(clean_ids), BULK_CHUNK_SIZE):
+            chunk = clean_ids[start:start + BULK_CHUNK_SIZE]
+            placeholders = ",".join("?" for _ in chunk)
+            cursor = execute(
+                c,
+                f"DELETE FROM transactions WHERE id IN ({placeholders})",
+                chunk,
+            )
+            deleted += cursor.rowcount
+    return deleted
 
 
 def save_ai_result(tx_id, summary, category):
